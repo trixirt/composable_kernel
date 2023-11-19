@@ -3,9 +3,6 @@
 %global rocm_patch 1
 %global rocm_version %{rocm_release}.%{rocm_patch}
 
-# runs out of memory linking
-%global _smp_mflags -j4
-
 %global toolchain rocm
 
 # hipcc does not support some clang flags
@@ -26,6 +23,10 @@
 # hardcoded use of gtest and dirs is not suitable for mock building
 %bcond_with test
 
+%if %{with test}
+# runs out of memory linking sometimes
+%global _smp_mflags -j1
+%endif
 
 Name:           composable_kernel
 Version:        %{rocm_version}
