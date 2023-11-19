@@ -113,6 +113,10 @@ do
     %cmake_install
 done
 
+%if %{with test}
+cp %{_vpath_builddir}/lib/libgtest* %{buildroot}%{_libdir}/rocm/gfx11/lib/
+%endif
+
 # libs need to be stripped
 strip %{buildroot}%{_libdir}/rocm/gfx11/lib/libdevice_operations.so.*
 strip %{buildroot}%{_libdir}/rocm/gfx11/lib/libutility.so.*
@@ -191,8 +195,9 @@ strip %{buildroot}%{_libdir}/rocm/gfx11/lib/libutility.so.*
 %if %{with test}
 %files test
 %{_libdir}/rocm/gfx11/bin/test_*
-
+%{_libdir}/rocm/gfx11/lib/libgtest*
 %endif
+
 %changelog
-* Sun Sep 24 2023 Tom Rix <trix@redhat.com> - 5.7.1-1
+* Sun Nov 19 2023 Tom Rix <trix@redhat.com> - 5.7.1-1
 - Initial package
