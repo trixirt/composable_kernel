@@ -11,9 +11,6 @@
 # $gpu will be evaluated in the loops below             
 %global _vpath_builddir %{_vendor}-%{_target_os}-build-${gpu}
 
-# No debug info
-%global debug_package %{nil}
-
 # Some holes in support, see ck.h CK_BUFFER_RESOURCE_3RD_DWORD
 # Missing most of the gfx10XX and some of the gfx9xx
 # Not bothering with gfx8 is neither 9 or 10 are used
@@ -23,10 +20,8 @@
 # hardcoded use of gtest and dirs is not suitable for mock building
 %bcond_with test
 
-%if %{with test}
 # runs out of memory linking sometimes
-%global _smp_mflags -j1
-%endif
+# %  global _smp_mflags -j1
 
 Name:           composable_kernel
 Version:        %{rocm_version}
@@ -55,6 +50,7 @@ BuildRequires:  rocm-rpm-macros
 BuildRequires:  rocm-rpm-macros-modules
 
 Requires:       rocm-rpm-macros-modules
+
 
 # Only x86_64 works right now:
 ExclusiveArch:  x86_64
@@ -99,7 +95,9 @@ for gpu in %{ck_gpu_list}
 do
     module load rocm/$gpu
     %cmake %rocm_cmake_options \
-           -DCMAKE_CXX_FLAGS="-mcmodel=medium" \
+	   -DCMAKE_JOB_POOL_LINK=1 \
+           -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+           -DCMAKE_CXX_FLAGS="-mcmodel=large" \
 
     %cmake_build
 %if %{with test}
@@ -117,10 +115,6 @@ done
 %if %{with test}
 cp %{_vpath_builddir}/lib/libgtest* %{buildroot}%{_libdir}/rocm/gfx11/lib/
 %endif
-
-# libs need to be stripped
-strip %{buildroot}%{_libdir}/rocm/gfx11/lib/libdevice_operations.so.*
-strip %{buildroot}%{_libdir}/rocm/gfx11/lib/libutility.so.*
 
 %files 
 %license LICENSE
