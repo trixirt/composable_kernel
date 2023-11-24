@@ -35,6 +35,8 @@ Patch0:         0001-Prepare-composable_kernel-cmake-for-fedora.patch
 %if %{with test}
 Patch1:         0001-Reenable-testing-for-ck.patch
 %endif
+Patch2:         0001-ck-add-link-jobs-option.patch
+
 
 BuildRequires:  cmake
 BuildRequires:  clang-devel
@@ -95,7 +97,7 @@ for gpu in %{ck_gpu_list}
 do
     module load rocm/$gpu
     %cmake %rocm_cmake_options \
-	   -DCMAKE_JOB_POOL_LINK=1 \
+           -DCK_PARALLEL_LINK_JOBS=1 \
            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
            -DCMAKE_CXX_FLAGS="-mcmodel=large" \
 
