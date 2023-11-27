@@ -6,22 +6,32 @@
 %global toolchain rocm
 
 # hipcc does not support some clang flags
-%global build_cxxflags %(echo %{optflags} | sed -e 's/-fstack-protector-strong/-Xarch_host -fstack-protector-strong/' -e 's/-fcf-protection/-Xarch_host -fcf-protection/')
+# build_cxxflags does not honor CMAKE_BUILD_TYPE, strip out -g
+%global build_cxxflags %(echo %{optflags} | sed -e 's/-fstack-protector-strong/-Xarch_host -fstack-protector-strong/' -e 's/-fcf-protection/-Xarch_host -fcf-protection/' -e 's/-g / /' )
 
 # $gpu will be evaluated in the loops below             
 %global _vpath_builddir %{_vendor}-%{_target_os}-build-${gpu}
 
 # Some holes in support, see ck.h CK_BUFFER_RESOURCE_3RD_DWORD
 # Missing most of the gfx10XX and some of the gfx9xx
-# Not bothering with gfx8 is neither 9 or 10 are used
+# Not bothering with gfx8 if neither 9 nor 10 are used
 %global ck_gpu_list gfx11
 
 # For testing
 # hardcoded use of gtest and dirs is not suitable for mock building
 %bcond_with test
 
-# runs out of memory linking sometimes
-# %  global _smp_mflags -j1
+# runs out of memory for both compile and link
+# Use fine tuned cmake CK_PARALLEL_COMPILE|LINK_JOBS switches
+%global _smp_mflags %{nil}
+
+# Do not build the debug package
+# building with CMAKE_BUILD_TYPE=RelWithDebInfo causes link overflows
+# So instead of breaking building into gpu specific libs, disable debug info
+%global debug_package %{nil}
+
+# Reduce link pressure
+%global _rocm_lto_cflags %{nil}
 
 Name:           composable_kernel
 Version:        %{rocm_version}
@@ -37,7 +47,6 @@ Patch1:         0001-Reenable-testing-for-ck.patch
 %endif
 Patch2:         0001-ck-add-link-jobs-option.patch
 
-
 BuildRequires:  cmake
 BuildRequires:  clang-devel
 BuildRequires:  compiler-rt
@@ -52,7 +61,6 @@ BuildRequires:  rocm-rpm-macros
 BuildRequires:  rocm-rpm-macros-modules
 
 Requires:       rocm-rpm-macros-modules
-
 
 # Only x86_64 works right now:
 ExclusiveArch:  x86_64
@@ -93,13 +101,32 @@ Requires:       %{name}%{?_isa} = %{version}-%{release}
 %autosetup -p1 -n %{upstreamname}-rocm-%{version}
 
 %build
+
+# Real cores, No hyperthreading
+COMPILE_JOBS=`cat /proc/cpuinfo | grep -m 1 'cpu cores' | awk '{ print $4 }'`
+if [ ${COMPILE_JOBS}x = x ]; then
+    COMPILE_JOBS=1
+fi
+# Take into account memmory usage per core, do not thrash real memory
+BUILD_MEM=4
+MEM_KB=0
+MEM_KB=`cat /proc/meminfo | grep MemTotal | awk '{ print $2 }'`
+MEM_MB=`eval "expr ${MEM_KB} / 1024"`
+MEM_GB=`eval "expr ${MEM_MB} / 1024"`
+COMPILE_JOBS_MEM=`eval "expr 1 + ${MEM_GB} / ${BUILD_MEM}"`
+if [ "$COMPILE_JOBS_MEM" -lt "$COMPILE_JOBS" ]; then
+    COMPILE_JOBS=$COMPILE_JOBS_MEM
+fi
+LINK_MEM=32
+LINK_JOBS=`eval "expr 1 + ${MEM_GB} / ${LINK_MEM}"`
+
 for gpu in %{ck_gpu_list}
 do
     module load rocm/$gpu
     %cmake %rocm_cmake_options \
-           -DCK_PARALLEL_LINK_JOBS=1 \
-           -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-           -DCMAKE_CXX_FLAGS="-mcmodel=large" \
+           -DCK_PARALLEL_COMPILE_JOBS=$COMPILE_JOBS \
+	   -DCK_PARALLEL_LINK_JOBS=$LINK_JOBS \
+           -DCMAKE_BUILD_TYPE=RELEASE
 
     %cmake_build
 %if %{with test}
@@ -113,6 +140,10 @@ for gpu in %{ck_gpu_list}
 do
     %cmake_install
 done
+
+# Since no debug info is created, need to manually strip
+strip %{buildroot}%{_libdir}/rocm/gfx11/lib/libdevice_operations.so.*
+strip %{buildroot}%{_libdir}/rocm/gfx11/lib/libutility.so.*
 
 %if %{with test}
 cp %{_vpath_builddir}/lib/libgtest* %{buildroot}%{_libdir}/rocm/gfx11/lib/
@@ -196,5 +227,5 @@ cp %{_vpath_builddir}/lib/libgtest* %{buildroot}%{_libdir}/rocm/gfx11/lib/
 %endif
 
 %changelog
-* Sun Nov 19 2023 Tom Rix <trix@redhat.com> - 5.7.1-1
+* Fri Nov 24 2023 Tom Rix <trix@redhat.com> - 5.7.1-1
 - Initial package
